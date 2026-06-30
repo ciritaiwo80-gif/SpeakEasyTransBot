@@ -1,7 +1,7 @@
 import os
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
-from googletrans import Translator
+from deep_translator import GoogleTranslator
 
 # Get token from environment variable
 TOKEN = os.environ.get("BOT_TOKEN", "")
@@ -13,10 +13,7 @@ if not TOKEN:
 
 print(f"✅ Token loaded successfully (length: {len(TOKEN)})")
 
-# Initialize translator
-translator = Translator()
-
-# Supported languages dictionary
+# Language mapping
 LANGUAGES = {
     'en': 'English',
     'es': 'Spanish',
@@ -25,7 +22,7 @@ LANGUAGES = {
     'it': 'Italian',
     'pt': 'Portuguese',
     'ru': 'Russian',
-    'zh-cn': 'Chinese (Simplified)',
+    'zh-CN': 'Chinese (Simplified)',
     'ja': 'Japanese',
     'ko': 'Korean',
     'ar': 'Arabic',
@@ -66,13 +63,11 @@ LANGUAGES = {
     'el': 'Greek',
     'gu': 'Gujarati',
     'ht': 'Haitian Creole',
-    'ha': 'Hausa',
     'haw': 'Hawaiian',
     'iw': 'Hebrew',
     'hmn': 'Hmong',
     'hu': 'Hungarian',
     'is': 'Icelandic',
-    'ig': 'Igbo',
     'id': 'Indonesian',
     'ga': 'Irish',
     'jw': 'Javanese',
@@ -114,12 +109,9 @@ LANGUAGES = {
     'sl': 'Slovenian',
     'so': 'Somali',
     'su': 'Sundanese',
-    'sw': 'Swahili',
     'sv': 'Swedish',
     'tg': 'Tajik',
-    'ta': 'Tamil',
     'tt': 'Tatar',
-    'te': 'Telugu',
     'th': 'Thai',
     'tr': 'Turkish',
     'tk': 'Turkmen',
@@ -129,17 +121,41 @@ LANGUAGES = {
     'vi': 'Vietnamese',
     'cy': 'Welsh',
     'xh': 'Xhosa',
-    'yi': 'Yiddish',
-    'yo': 'Yoruba',
-    'zu': 'Zulu'
+    'yi': 'Yiddish'
 }
 
-# User state tracking
+# User state storage
 user_target_lang = {}
+
+# ===== Translation Function =====
+def translate_text(text: str, target_lang: str) -> str:
+    """Translate text using GoogleTranslator with error handling"""
+    try:
+        # Detect source language
+        translator = GoogleTranslator(target=target_lang)
+        result = translator.translate(text)
+        return result
+    except Exception as e:
+        print(f"Translation error: {e}")
+        # Try alternative approach
+        try:
+            # Sometimes works with source='auto'
+            translator = GoogleTranslator(source='auto', target=target_lang)
+            return translator.translate(text)
+        except Exception as e2:
+            print(f"Alternative translation error: {e2}")
+            return f"⚠️ Translation failed: {str(e2)}"
+
+def detect_language(text: str) -> str:
+    """Detect language of text"""
+    try:
+        result = GoogleTranslator().detect(text)
+        return result
+    except:
+        return 'en'  # Default to English if detection fails
 
 # ===== Command Handlers =====
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle /start command"""
     user = update.effective_user
     welcome_msg = (
         f"🌍 *Hello {user.first_name}!*\n\n"
@@ -157,7 +173,6 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(welcome_msg, parse_mode='Markdown')
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle /help command"""
     help_msg = (
         "📖 *SpeakEasyTransBot Help*\n\n"
         "*Commands:*\n"
@@ -183,8 +198,6 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(help_msg, parse_mode='Markdown')
 
 async def languages_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle /languages command"""
-    # Create a list of languages
     lang_list = "\n".join([f"• `{code}`: {name}" for code, name in list(LANGUAGES.items())[:20]])
     lang_msg = (
         f"📚 *Supported Languages (First 20)*\n\n"
@@ -195,7 +208,6 @@ async def languages_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(lang_msg, parse_mode='Markdown')
 
 async def setlang_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle /setlang command - show language selection keyboard"""
     keyboard = []
     row = []
     for i, (code, name) in enumerate(LANGUAGES.items()):
@@ -208,14 +220,12 @@ async def setlang_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     reply_markup = InlineKeyboardMarkup(keyboard)
     await update.message.reply_text(
-        "🌍 *Select your default target language:*\n"
-        "Choose a language from the list below. After setting, all texts you send will be translated to this language.",
+        "🌍 *Select your default target language:*",
         parse_mode='Markdown',
         reply_markup=reply_markup
     )
 
 async def about_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle /about command"""
     about_msg = (
         "🌍 *About SpeakEasyTransBot*\n\n"
         "This bot was created to help you translate text between 100+ languages.\n\n"
@@ -225,52 +235,30 @@ async def about_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "✓ Quick translation commands\n"
         "✓ Privacy-focused (we don't store your text)\n"
         "✓ Free to use\n\n"
-        "Built with ❤️ using googletrans and python-telegram-bot."
+        "Built with ❤️ using deep-translator and python-telegram-bot."
     )
     await update.message.reply_text(about_msg, parse_mode='Markdown')
 
-# ===== Callback Query Handler =====
+# ===== Callback Handler =====
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle language selection callback"""
     query = update.callback_query
     await query.answer()
     
-    # Extract language code from callback data
     lang_code = query.data.replace("lang_", "")
     lang_name = LANGUAGES.get(lang_code, "Unknown")
     
-    # Store user's language preference
     user_id = query.from_user.id
     user_target_lang[user_id] = lang_code
     
     await query.edit_message_text(
         f"✅ *Language set!*\n\n"
         f"Your default target language is now *{lang_name}*.\n\n"
-        f"Just send me any text, and I'll translate it to {lang_name}!\n"
-        f"Or use /help to see all commands.",
+        f"Just send me any text, and I'll translate it to {lang_name}!",
         parse_mode='Markdown'
     )
 
-# ===== Translation Functions =====
-async def translate_text(text: str, target_lang: str) -> str:
-    """Translate text to target language"""
-    try:
-        result = translator.translate(text, dest=target_lang)
-        return result.text
-    except Exception as e:
-        return f"❌ Translation error: {str(e)}"
-
-async def detect_language(text: str) -> str:
-    """Detect language of text"""
-    try:
-        result = translator.detect(text)
-        return result.lang
-    except Exception as e:
-        return "unknown"
-
 # ===== Message Handler =====
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle incoming text messages"""
     text = update.message.text
     
     if text.startswith('/'):
@@ -280,40 +268,37 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("⚠️ Please send some text to translate!")
         return
     
-    # Check if user has set a default language
+    # Get user's default language
     user_id = update.effective_user.id
-    target_lang = user_target_lang.get(user_id, 'en')  # Default to English
+    target_lang = user_target_lang.get(user_id, 'en')
     
-    # Detect source language
-    source_lang = await detect_language(text)
-    source_name = LANGUAGES.get(source_lang, "Unknown")
-    target_name = LANGUAGES.get(target_lang, "Unknown")
-    
-    # Translate
-    translated_text = await translate_text(text, target_lang)
-    
-    # Format response
-    response = (
-        f"🌍 *Translation*\n"
-        f"{'─' * 25}\n"
-        f"🔹 *From:* {source_name}\n"
-        f"🔸 *To:* {target_name}\n"
-        f"{'─' * 25}\n"
-        f"📝 *Translation:*\n"
-        f"{translated_text}\n"
-        f"{'─' * 25}\n"
-        f"💡 *Tip:* Use /setlang to change language\n"
-        f"   Use /help for all commands"
-    )
-    
-    await update.message.reply_text(response, parse_mode='Markdown')
+    try:
+        # Translate
+        translated = translate_text(text, target_lang)
+        source_lang = detect_language(text)
+        
+        source_name = LANGUAGES.get(source_lang, "Unknown")
+        target_name = LANGUAGES.get(target_lang, "Unknown")
+        
+        response = (
+            f"🌍 *Translation*\n"
+            f"{'─' * 25}\n"
+            f"🔹 *From:* {source_name}\n"
+            f"🔸 *To:* {target_name}\n"
+            f"{'─' * 25}\n"
+            f"📝 *Translation:*\n"
+            f"{translated}"
+        )
+        
+        await update.message.reply_text(response, parse_mode='Markdown')
+        
+    except Exception as e:
+        print(f"Handler error: {e}")
+        await update.message.reply_text(f"⚠️ Translation error: {str(e)}")
 
-# ===== Quick Translation Command Handlers =====
+# ===== Quick Translation Handlers =====
 async def quick_translate(update: Update, context: ContextTypes.DEFAULT_TYPE, target_lang: str):
-    """Handle quick translation commands like /en, /es, etc."""
-    # Get the text after the command
-    command_text = update.message.text
-    parts = command_text.split(' ', 1)
+    parts = update.message.text.split(' ', 1)
     
     if len(parts) < 2:
         lang_name = LANGUAGES.get(target_lang, "Unknown")
@@ -329,24 +314,29 @@ async def quick_translate(update: Update, context: ContextTypes.DEFAULT_TYPE, ta
         await update.message.reply_text("⚠️ Please provide text to translate!")
         return
     
-    translated_text = await translate_text(text_to_translate, target_lang)
-    source_lang = await detect_language(text_to_translate)
-    source_name = LANGUAGES.get(source_lang, "Unknown")
-    target_name = LANGUAGES.get(target_lang, "Unknown")
-    
-    response = (
-        f"🌍 *Quick Translation*\n"
-        f"{'─' * 25}\n"
-        f"🔹 *From:* {source_name}\n"
-        f"🔸 *To:* {target_name}\n"
-        f"{'─' * 25}\n"
-        f"📝 *Translation:*\n"
-        f"{translated_text}"
-    )
-    
-    await update.message.reply_text(response, parse_mode='Markdown')
+    try:
+        translated = translate_text(text_to_translate, target_lang)
+        source_lang = detect_language(text_to_translate)
+        
+        source_name = LANGUAGES.get(source_lang, "Unknown")
+        target_name = LANGUAGES.get(target_lang, "Unknown")
+        
+        response = (
+            f"🌍 *Quick Translation*\n"
+            f"{'─' * 25}\n"
+            f"🔹 *From:* {source_name}\n"
+            f"🔸 *To:* {target_name}\n"
+            f"{'─' * 25}\n"
+            f"📝 *Translation:*\n"
+            f"{translated}"
+        )
+        
+        await update.message.reply_text(response, parse_mode='Markdown')
+        
+    except Exception as e:
+        print(f"Quick translate error: {e}")
+        await update.message.reply_text(f"⚠️ Translation error: {str(e)}")
 
-# Create quick translation handlers
 def create_quick_handler(lang_code):
     async def handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await quick_translate(update, context, lang_code)
@@ -354,39 +344,40 @@ def create_quick_handler(lang_code):
 
 # ===== Error Handler =====
 async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Log errors"""
     print(f"❌ Error: {context.error}")
-    if update and update.message:
-        await update.message.reply_text("⚠️ An error occurred. Please try again.")
+    try:
+        if update and update.message:
+            await update.message.reply_text("⚠️ An error occurred. Please try again.")
+    except:
+        pass
 
 # ===== Main Function =====
 def main():
-    """Start the bot"""
     print("🚀 Starting SpeakEasyTransBot...")
     
     try:
         application = Application.builder().token(TOKEN).build()
         print("✅ Application built successfully")
         
-        # Add command handlers
+        # Command handlers
         application.add_handler(CommandHandler("start", start_command))
         application.add_handler(CommandHandler("help", help_command))
         application.add_handler(CommandHandler("languages", languages_command))
         application.add_handler(CommandHandler("setlang", setlang_command))
         application.add_handler(CommandHandler("about", about_command))
         
-        # Add quick translation handlers
+        # Quick translation handlers
         quick_langs = ['en', 'es', 'fr', 'de', 'it', 'pt', 'ru', 'zh', 'ja', 'ko', 'ar', 'hi']
         for lang in quick_langs:
             application.add_handler(CommandHandler(lang, create_quick_handler(lang)))
         
-        # Add callback query handler
+        # Callback handler
         application.add_handler(CallbackQueryHandler(button_callback))
         
-        # Add message handler
+        # Message handler
         application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
         
-        # Add error handler
+        # Error handler
         application.add_error_handler(error_handler)
         
         print("✅ Bot is running! Waiting for messages...")
